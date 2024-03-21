@@ -19,6 +19,7 @@ from scripts.util.detection.nsfw_and_watermark_dectection import DeepFloydDataFi
 from sgm.inference.helpers import embed_watermark
 from sgm.util import default, instantiate_from_config
 from torchvision.transforms import ToTensor
+from torchvision.io import write_video
 
 
 def sample(
@@ -133,6 +134,8 @@ def sample(
                 # remove bg
                 image.thumbnail([768, 768], Image.Resampling.LANCZOS)
                 image = remove(image.convert("RGBA"), alpha_matting=True)
+            #     image = image.convert("RGBA")
+            # input_image = image.convert("RGB").resize((576, 576))
 
             # resize object in frame
             image_arr = np.array(image)
@@ -161,17 +164,21 @@ def sample(
             input_image = Image.fromarray((rgb * 255).astype(np.uint8))
 
         else:
-            with Image.open(input_img_path) as image:
-                if image.mode == "RGBA":
-                    input_image = image.convert("RGB")
-                w, h = image.size
+            # with Image.open(input_img_path) as image:
+            image = Image.open(input_img_path)
+            if image.mode == "RGBA":
+                input_image = image.convert("RGB")
+            else:
+                input_image = image
+            # w, h = image.size
+            w, h = input_image.size
 
-                if h % 64 != 0 or w % 64 != 0:
-                    width, height = map(lambda x: x - x % 64, (w, h))
-                    input_image = input_image.resize((width, height))
-                    print(
-                        f"WARNING: Your image is of size {h}x{w} which is not divisible by 64. We are resizing to {height}x{width}!"
-                    )
+            if h % 64 != 0 or w % 64 != 0:
+                width, height = map(lambda x: x - x % 64, (w, h))
+                input_image = input_image.resize((width, height))
+                print(
+                    f"WARNING: Your image is of size {h}x{w} which is not divisible by 64. We are resizing to {height}x{width}!"
+                )
 
         image = ToTensor()(input_image)
         image = image * 2.0 - 1.0
@@ -256,22 +263,38 @@ def sample(
                 samples = torch.clamp((samples_x + 1.0) / 2.0, min=0.0, max=1.0)
 
                 os.makedirs(output_folder, exist_ok=True)
-                base_count = len(glob(os.path.join(output_folder, "*.mp4")))
+                # base_count = len(glob(os.path.join(output_folder, "*.mp4")))
 
+                # imageio.imwrite(
+                #     os.path.join(output_folder, f"{base_count:06d}.jpg"), input_image
+                # )
+
+                # samples = embed_watermark(samples)
+                # samples = filter(samples)
+                # vid = (
+                #     (rearrange(samples, "t c h w -> t h w c") * 255)
+                #     .cpu()
+                #     .numpy()
+                #     .astype(np.uint8)
+                # )
+                # video_path = os.path.join(output_folder, f"{base_count:06d}.mp4")
+                # imageio.mimwrite(video_path, vid)
+
+
+                # video_path = os.path.join(output_folder, f"{base_count:06d}.mp4")
+                img_name = os.path.splitext(os.path.basename(input_img_path))[0]
                 imageio.imwrite(
-                    os.path.join(output_folder, f"{base_count:06d}.jpg"), input_image
+                    os.path.join(output_folder, f"{img_name}_seed{seed}.jpg"), input_image
                 )
-
-                samples = embed_watermark(samples)
-                samples = filter(samples)
+                video_path = os.path.join(output_folder, f"{img_name}_seed{seed}.mp4")
+                # change mp4v to 264 for vscode visual support
                 vid = (
                     (rearrange(samples, "t c h w -> t h w c") * 255)
                     .cpu()
                     .numpy()
                     .astype(np.uint8)
                 )
-                video_path = os.path.join(output_folder, f"{base_count:06d}.mp4")
-                imageio.mimwrite(video_path, vid)
+                write_video(video_path, vid, fps=fps_id + 1)
 
 
 def get_unique_embedder_keys_from_conditioner(conditioner):
